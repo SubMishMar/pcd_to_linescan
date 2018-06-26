@@ -5,15 +5,34 @@
 #include "sensor_msgs/PointCloud2.h"
 #include "sensor_msgs/point_cloud2_iterator.h"
 
-double tolerance_, min_height_, max_height_;
-double angle_min_, angle_max_, angle_increment_;
-double scan_time_, range_min_, range_max_;
-double inf_epsilon_;
-bool use_inf_;
+class scan_publisher {
+private:
+  double tolerance_, min_height_, max_height_;
+  double angle_min_, angle_max_, angle_increment_;
+  double scan_time_, range_min_, range_max_;
+  double inf_epsilon_;
+  bool use_inf_;
 
-sensor_msgs::LaserScan output;
+  sensor_msgs::LaserScan output;
 
-void readParams(ros::NodeHandle &nh) {
+  ros::NodeHandle nh_;
+  ros::Subscriber sub_;
+  ros::Publisher pub_;
+
+public:
+  scan_publisher(ros::NodeHandle &n);
+  void readParams(ros::NodeHandle &n);
+  void pointcloudCb(const sensor_msgs::PointCloud2ConstPtr &cloud_msg);
+};
+
+scan_publisher::scan_publisher(ros::NodeHandle &n) {
+  nh_ = n;
+  sub_ = nh_.subscribe("cloud_in", 100, &scan_publisher::pointcloudCb, this);
+  pub_ = nh_.advertise<sensor_msgs::LaserScan>("camera_link", 100);
+  readParams(nh_);  
+}
+
+void scan_publisher::readParams(ros::NodeHandle &nh) {
   nh.param<double>("transform_tolerance", tolerance_, 0.01);
   nh.param<double>("min_height", min_height_, std::numeric_limits<double>::min());
   nh.param<double>("max_height", max_height_, std::numeric_limits<double>::max());
@@ -28,9 +47,9 @@ void readParams(ros::NodeHandle &nh) {
   nh.param<bool>("use_inf", use_inf_, true);
 }
 
-void pointcloudCb(const sensor_msgs::PointCloud2ConstPtr &cloud_msg) {
+void scan_publisher::pointcloudCb(const sensor_msgs::PointCloud2ConstPtr &cloud_msg) {
   output.header = cloud_msg->header;
-  output.header.frame_id = "base_link";
+  output.header.frame_id = "camera_de";
   output.angle_min = angle_min_;
   output.angle_max = angle_max_;
   output.angle_increment = angle_increment_;
@@ -93,21 +112,13 @@ void pointcloudCb(const sensor_msgs::PointCloud2ConstPtr &cloud_msg) {
       output.ranges[index] = range;
     }
   }
+  pub_.publish(output);
 }
 
 int main(int argc, char **argv){
   ros::init(argc, argv, "pcd_to_linescan_node");
-  ros::NodeHandle n;
-  readParams(n);
-  ros::Subscriber sub = n.subscribe("cloud_in", 1000, pointcloudCb);
-  ros::Publisher pub = n.advertise<sensor_msgs::LaserScan>("scan_out", 1000);
-
-  ros::Rate loop_rate(10);
-
-  while(ros::ok()) {
-    pub.publish(output);
-    ros::spinOnce();
-    loop_rate.sleep();
-  }
+  ros::NodeHandle nh;
+  scan_publisher scan_pub(nh);
+  ros::spin();
   return 0;
 }
